@@ -1,0 +1,116 @@
+graph TB
+    subgraph CLIENT["Client Layer"]
+        BROWSER["Browser (Next.js - v0.3)"]
+        SWAGGER["OpenAPI / Swagger UI"]
+    end
+
+    subgraph API["API Layer — FastAPI"]
+        APP["app.py<br/>App Factory"]
+        DI["dependencies.py<br/>DI Container"]
+        subgraph ROUTERS["Routers"]
+            R_PORT["portfolios.py<br/>CRUD endpoints"]
+            R_OPT["optimization.py<br/>Optimize endpoint"]
+            R_RISK["risk.py<br/>Risk report endpoint"]
+            R_FACT["factors.py<br/>Factor exposure endpoint"]
+        end
+    end
+
+    subgraph APPLICATION["Application Layer — Use Cases"]
+        S_PORT["portfolio_service.py<br/>Portfolio CRUD orchestration"]
+        S_RISK["risk_service.py<br/>Risk analysis orchestration"]
+        S_FACT["factor_service.py<br/>Factor decomposition orchestration"]
+    end
+
+    subgraph DOMAIN["Domain Layer — Pure Business Logic"]
+        subgraph BC_PORT["Portfolio Context"]
+            DM_PORT["models.py<br/>Portfolio, Holding, Weight"]
+            DS_PORT["services.py<br/>Construction & validation"]
+            DR_PORT["repository.py<br/>«interface» PortfolioRepository"]
+        end
+        subgraph BC_OPT["Optimization Context"]
+            DM_OPT["models.py<br/>OptimizationRequest, Result, Constraints"]
+            DS_OPT["services.py<br/>Optimization orchestration"]
+            DI_OPT["optimizer.py<br/>«interface» Optimizer"]
+        end
+        subgraph BC_RISK["Risk Context"]
+            DM_RISK["models.py<br/>RiskMetrics, VaRResult, Drawdown"]
+            DS_RISK["services.py<br/>Risk calculations"]
+        end
+        subgraph BC_FACT["Factor Context"]
+            DM_FACT["models.py<br/>FactorExposure, Decomposition"]
+            DS_FACT["services.py<br/>Factor regression"]
+        end
+        subgraph BC_MKT["Market Data Context"]
+            DM_MKT["models.py<br/>PriceHistory, AssetInfo"]
+            DR_MKT["repository.py<br/>«interface» MarketDataRepository"]
+            DS_MKT["services.py<br/>Data retrieval & caching"]
+        end
+    end
+
+    subgraph INFRA["Infrastructure Layer — Adapters"]
+        subgraph DB["Database"]
+            DB_CONN["connection.py<br/>SQLite connection"]
+            DB_MODELS["models.py<br/>Table definitions"]
+            DB_REPO["repositories.py<br/>PortfolioRepository impl"]
+        end
+        subgraph MKT["Market Data"]
+            YF["yfinance_adapter.py<br/>MarketDataRepository impl"]
+        end
+        subgraph OPT["Optimization"]
+            RF["riskfolio_adapter.py<br/>Optimizer impl"]
+        end
+    end
+
+    subgraph EXTERNAL["External Services"]
+        YAHOO["Yahoo Finance API"]
+        FF["Fama-French<br/>Data Library"]
+        SQLITE[("SQLite<br/>Database")]
+    end
+
+    %% Client to API
+    BROWSER --> APP
+    SWAGGER --> APP
+    APP --> DI
+    DI --> ROUTERS
+
+    %% API to Application
+    R_PORT --> S_PORT
+    R_OPT --> S_PORT
+    R_RISK --> S_RISK
+    R_FACT --> S_FACT
+
+    %% Application to Domain
+    S_PORT --> DS_PORT
+    S_PORT --> DS_OPT
+    S_RISK --> DS_RISK
+    S_FACT --> DS_FACT
+    S_PORT --> DS_MKT
+    S_RISK --> DS_MKT
+    S_FACT --> DS_MKT
+
+    %% Domain interfaces implemented by Infrastructure
+    DR_PORT -.->|implemented by| DB_REPO
+    DR_MKT -.->|implemented by| YF
+    DI_OPT -.->|implemented by| RF
+
+    %% Infrastructure to External
+    DB_REPO --> SQLITE
+    DB_CONN --> SQLITE
+    YF --> YAHOO
+    DS_FACT -.-> FF
+    RF -.-> DS_OPT
+
+    %% Styling
+    classDef domainStyle fill:#4A90D9,stroke:#2C5F8A,color:#fff
+    classDef appStyle fill:#7B68EE,stroke:#5A4CBF,color:#fff
+    classDef apiStyle fill:#50C878,stroke:#3A9D5C,color:#fff
+    classDef infraStyle fill:#FF8C42,stroke:#CC6F35,color:#fff
+    classDef externalStyle fill:#95A5A6,stroke:#7F8C8D,color:#fff
+    classDef clientStyle fill:#E8D44D,stroke:#C4B23E,color:#333
+
+    class BROWSER,SWAGGER clientStyle
+    class APP,DI,R_PORT,R_OPT,R_RISK,R_FACT apiStyle
+    class S_PORT,S_RISK,S_FACT appStyle
+    class DM_PORT,DS_PORT,DR_PORT,DM_OPT,DS_OPT,DI_OPT,DM_RISK,DS_RISK,DM_FACT,DS_FACT,DM_MKT,DR_MKT,DS_MKT domainStyle
+    class DB_CONN,DB_MODELS,DB_REPO,YF,RF infraStyle
+    class YAHOO,FF,SQLITE externalStyle
