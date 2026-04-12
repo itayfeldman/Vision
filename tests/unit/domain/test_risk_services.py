@@ -1,6 +1,9 @@
-import numpy as np
+from datetime import date, timedelta
 
-from vision.domain.risk.models import RiskMetrics
+import numpy as np
+import pytest
+
+from vision.domain.risk.models import BenchmarkComparison, RiskMetrics
 from vision.domain.risk.services import RiskCalculationService
 
 
@@ -54,6 +57,45 @@ def test_max_drawdown_is_negative() -> None:
     returns = _known_returns()
     metrics = RiskCalculationService.compute_risk_metrics(returns)
     assert metrics.max_drawdown < 0
+
+
+def test_benchmark_comparison_recovers_beta() -> None:
+    rng = np.random.default_rng(7)
+    n = 252
+    benchmark = rng.normal(0.0004, 0.01, n)
+    noise = rng.normal(0, 0.003, n)
+    true_beta = 1.2
+    alpha_daily = 0.0002
+    portfolio = alpha_daily + true_beta * benchmark + noise
+    dates = [date(2023, 1, 2) + timedelta(days=i) for i in range(n)]
+
+    result = RiskCalculationService.compute_benchmark_comparison(
+        dates=dates,
+        portfolio_returns=portfolio,
+        benchmark_returns=benchmark,
+        benchmark_ticker="SPY",
+    )
+
+    assert isinstance(result, BenchmarkComparison)
+    assert result.benchmark_ticker == "SPY"
+    assert abs(result.beta - true_beta) < 0.05
+    assert result.tracking_error > 0
+    assert len(result.spread_series) == n
+    assert result.spread_series[0].date == dates[0].isoformat()
+
+
+def test_benchmark_comparison_rejects_short_series() -> None:
+    rng = np.random.default_rng(1)
+    portfolio = rng.normal(0, 0.01, 30)
+    benchmark = rng.normal(0, 0.01, 30)
+    dates = [date(2023, 1, 2) + timedelta(days=i) for i in range(30)]
+    with pytest.raises(ValueError, match="at least"):
+        RiskCalculationService.compute_benchmark_comparison(
+            dates=dates,
+            portfolio_returns=portfolio,
+            benchmark_returns=benchmark,
+            benchmark_ticker="SPY",
+        )
 
 
 def test_compute_correlation_matrix() -> None:

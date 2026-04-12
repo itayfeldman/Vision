@@ -19,3 +19,22 @@ class RiskMetrics:
 class CorrelationMatrix:
     tickers: list[str]
     matrix: list[list[float]]
+
+
+@dataclass(frozen=True)
+class SpreadPoint:
+    date: str  # ISO format
+    portfolio_cum: float
+    benchmark_cum: float
+    spread: float
+
+
+@dataclass(frozen=True)
+class BenchmarkComparison:
+    benchmark_ticker: str
+    tracking_error: float
+    beta: float
+    alpha: float
+    up_capture: float
+    down_capture: float
+    spread_series: list[SpreadPoint]

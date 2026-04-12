@@ -1,9 +1,30 @@
+from datetime import date
+
 import numpy as np
 from numpy.typing import NDArray
 
-from vision.domain.risk.models import CorrelationMatrix, RiskMetrics
+from vision.domain.risk.models import (
+    BenchmarkComparison,
+    CorrelationMatrix,
+    RiskMetrics,
+    SpreadPoint,
+)
 
 TRADING_DAYS = 252
+MIN_BENCHMARK_DAYS = 60
+
+
+def _capture_ratio(
+    portfolio_returns: NDArray[np.floating],
+    benchmark_returns: NDArray[np.floating],
+    mask: NDArray[np.bool_],
+) -> float:
+    if not np.any(mask):
+        return 0.0
+    bench_mean = float(np.mean(benchmark_returns[mask]))
+    if bench_mean == 0:
+        return 0.0
+    return float(np.mean(portfolio_returns[mask]) / bench_mean)
 
 
 class RiskCalculationService:
@@ -55,6 +76,70 @@ class RiskCalculationService:
             var_99=var_99,
             cvar_95=cvar_95,
             cvar_99=cvar_99,
+        )
+
+    @staticmethod
+    def compute_benchmark_comparison(
+        dates: list[date],
+        portfolio_returns: NDArray[np.floating],
+        benchmark_returns: NDArray[np.floating],
+        benchmark_ticker: str,
+    ) -> BenchmarkComparison:
+        if len(portfolio_returns) != len(benchmark_returns) or len(dates) != len(
+            portfolio_returns
+        ):
+            raise ValueError("Portfolio and benchmark series must be aligned")
+        if len(portfolio_returns) < MIN_BENCHMARK_DAYS:
+            raise ValueError(
+                f"Need at least {MIN_BENCHMARK_DAYS} aligned days for "
+                f"benchmark comparison; got {len(portfolio_returns)}"
+            )
+
+        bench_var = float(np.var(benchmark_returns, ddof=1))
+        if bench_var <= 0:
+            raise ValueError("Benchmark returns have zero variance")
+
+        cov = float(
+            np.cov(portfolio_returns, benchmark_returns, ddof=1)[0, 1]
+        )
+        beta = cov / bench_var
+
+        ann_port_return = float(np.mean(portfolio_returns) * TRADING_DAYS)
+        ann_bench_return = float(np.mean(benchmark_returns) * TRADING_DAYS)
+        alpha = ann_port_return - beta * ann_bench_return
+
+        diffs = portfolio_returns - benchmark_returns
+        tracking_error = float(
+            np.std(diffs, ddof=1) * np.sqrt(TRADING_DAYS)
+        )
+
+        up_capture = _capture_ratio(
+            portfolio_returns, benchmark_returns, benchmark_returns > 0
+        )
+        down_capture = _capture_ratio(
+            portfolio_returns, benchmark_returns, benchmark_returns < 0
+        )
+
+        port_cum = np.cumprod(1 + portfolio_returns) - 1.0
+        bench_cum = np.cumprod(1 + benchmark_returns) - 1.0
+        spread_series = [
+            SpreadPoint(
+                date=dates[i].isoformat(),
+                portfolio_cum=float(port_cum[i]),
+                benchmark_cum=float(bench_cum[i]),
+                spread=float(port_cum[i] - bench_cum[i]),
+            )
+            for i in range(len(dates))
+        ]
+
+        return BenchmarkComparison(
+            benchmark_ticker=benchmark_ticker,
+            tracking_error=tracking_error,
+            beta=beta,
+            alpha=alpha,
+            up_capture=up_capture,
+            down_capture=down_capture,
+            spread_series=spread_series,
         )
 
     @staticmethod

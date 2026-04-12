@@ -8,7 +8,7 @@ from vision.application.portfolio_service import (
     PortfolioAppService,
     PortfolioNotFoundError,
 )
-from vision.application.risk_service import RiskAppService
+from vision.application.risk_service import BenchmarkUnresolvableError, RiskAppService
 from vision.domain.portfolio.models import Holding, Portfolio
 from vision.domain.portfolio.services import InvalidTickerError, InvalidWeightsError
 
@@ -65,6 +65,23 @@ class PortfolioSummaryResponse(BaseModel):
     holdings: list[HoldingSchema]
     risk: RiskSummary
     factor_exposures: list[FactorExposureSummary]
+
+
+class SpreadPointSchema(BaseModel):
+    date: str
+    portfolio_cum: float
+    benchmark_cum: float
+    spread: float
+
+
+class BenchmarkComparisonResponse(BaseModel):
+    benchmark_ticker: str
+    tracking_error: float
+    beta: float
+    alpha: float
+    up_capture: float
+    down_capture: float
+    spread_series: list[SpreadPointSchema]
 
 
 def get_portfolio_service() -> PortfolioAppService:
@@ -148,6 +165,48 @@ def get_portfolio_summary(
                 beta=e.beta,
             )
             for e in decomposition.exposures
+        ],
+    )
+
+
+@router.get(
+    "/{portfolio_id}/benchmark",
+    response_model=BenchmarkComparisonResponse,
+)
+def get_benchmark_comparison(
+    portfolio_id: str,
+    ticker: str = Query(default="SPY"),
+    lookback_years: int = Query(default=3, ge=1, le=10),
+    risk_svc: RiskAppService = Depends(get_risk_service),  # noqa: B008
+) -> BenchmarkComparisonResponse:
+    try:
+        result = risk_svc.compare_to_benchmark(
+            portfolio_id=portfolio_id,
+            benchmark_ticker=ticker,
+            lookback_years=lookback_years,
+        )
+    except PortfolioNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except BenchmarkUnresolvableError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    return BenchmarkComparisonResponse(
+        benchmark_ticker=result.benchmark_ticker,
+        tracking_error=result.tracking_error,
+        beta=result.beta,
+        alpha=result.alpha,
+        up_capture=result.up_capture,
+        down_capture=result.down_capture,
+        spread_series=[
+            SpreadPointSchema(
+                date=p.date,
+                portfolio_cum=p.portfolio_cum,
+                benchmark_cum=p.benchmark_cum,
+                spread=p.spread,
+            )
+            for p in result.spread_series
         ],
     )
 

@@ -1,13 +1,22 @@
 from datetime import date, timedelta
 
 import numpy as np
+import pandas as pd
 from numpy.typing import NDArray
 
 from vision.application.market_data_service import MarketDataAppService
 from vision.application.portfolio_service import PortfolioAppService
 from vision.domain.portfolio.models import Holding
-from vision.domain.risk.models import CorrelationMatrix, RiskMetrics
+from vision.domain.risk.models import (
+    BenchmarkComparison,
+    CorrelationMatrix,
+    RiskMetrics,
+)
 from vision.domain.risk.services import RiskCalculationService
+
+
+class BenchmarkUnresolvableError(Exception):
+    pass
 
 
 class RiskAppService:
@@ -72,3 +81,65 @@ class RiskAppService:
         correlation = RiskCalculationService.compute_correlation_matrix(trimmed)
 
         return metrics, correlation
+
+    def compare_to_benchmark(
+        self,
+        portfolio_id: str,
+        benchmark_ticker: str = "SPY",
+        lookback_years: int = 3,
+    ) -> BenchmarkComparison:
+        portfolio = self._portfolio_service.get_portfolio(portfolio_id)
+        end = date.today()
+        start = end - timedelta(days=lookback_years * 365)
+
+        frame: dict[str, pd.Series] = {}
+        for h in portfolio.holdings:
+            daily = self._market_data_service.get_daily_returns(
+                h.ticker, start, end
+            )
+            if daily:
+                frame[h.ticker] = pd.Series(
+                    [r for _, r in daily],
+                    index=[d for d, _ in daily],
+                )
+
+        if not frame:
+            raise ValueError("No market data available for portfolio holdings")
+
+        try:
+            bench_daily = self._market_data_service.get_daily_returns(
+                benchmark_ticker, start, end
+            )
+        except Exception as e:
+            raise BenchmarkUnresolvableError(
+                f"Could not resolve benchmark '{benchmark_ticker}'"
+            ) from e
+        if not bench_daily:
+            raise BenchmarkUnresolvableError(
+                f"No data for benchmark '{benchmark_ticker}'"
+            )
+        frame["__benchmark__"] = pd.Series(
+            [r for _, r in bench_daily],
+            index=[d for d, _ in bench_daily],
+        )
+
+        df = pd.DataFrame(frame).dropna()
+        if df.empty:
+            raise ValueError(
+                "Portfolio and benchmark histories do not overlap"
+            )
+
+        bench_col = df["__benchmark__"].to_numpy()
+        ticker_cols = [c for c in df.columns if c != "__benchmark__"]
+        weights = {h.ticker: h.weight for h in portfolio.holdings}
+        port_col = np.zeros(len(df))
+        for t in ticker_cols:
+            port_col += weights[t] * df[t].to_numpy()
+
+        aligned_dates = [d for d in df.index]
+        return RiskCalculationService.compute_benchmark_comparison(
+            dates=aligned_dates,
+            portfolio_returns=port_col,
+            benchmark_returns=bench_col,
+            benchmark_ticker=benchmark_ticker,
+        )
