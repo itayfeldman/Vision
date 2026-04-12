@@ -119,6 +119,12 @@ export default function PortfolioDetail() {
         </div>
         <div className="flex gap-2">
           <Link
+            href={`/benchmark/${id}`}
+            className="border border-border hover:border-accent/40 px-4 py-2 rounded-lg text-sm text-text-secondary transition-colors"
+          >
+            Benchmark
+          </Link>
+          <Link
             href={`/portfolios/${id}/edit`}
             className="border border-border hover:border-accent/40 px-4 py-2 rounded-lg text-sm text-text-secondary transition-colors"
           >
