@@ -6,6 +6,8 @@ from numpy.typing import NDArray
 
 from vision.application.market_data_service import MarketDataAppService
 from vision.application.portfolio_service import PortfolioAppService
+from vision.domain.market_data.models import PriceHistory as _PriceHistory
+from vision.domain.market_data.services import MarketDataService as _MarketDataService
 from vision.domain.portfolio.models import Holding
 from vision.domain.risk.models import (
     BenchmarkComparison,
@@ -96,10 +98,7 @@ class RiskAppService:
         end = date.today()
         start = end - timedelta(days=lookback_years * 365)
 
-        from vision.domain.market_data.models import PriceHistory
-        from vision.domain.market_data.services import MarketDataService
-
-        ticker_prices: dict[str, PriceHistory] = {}
+        ticker_prices: dict[str, _PriceHistory] = {}
         for h in holdings:
             ph = self._market_data_service.get_price_history(
                 h.ticker, start, end
@@ -110,34 +109,39 @@ class RiskAppService:
         if not ticker_prices:
             return PerformanceSeries(points=[])
 
-        # Compute daily returns from price histories
-        ticker_returns: dict[str, list[tuple[date, float]]] = {}
+        # Build per-ticker return series indexed by date, then align via
+        # DataFrame.dropna() so only dates where all tickers have data are kept.
+        returns_frame: dict[str, pd.Series] = {}
+        volumes_frame: dict[str, pd.Series] = {}
         for ticker, ph in ticker_prices.items():
-            ticker_returns[ticker] = MarketDataService.compute_daily_returns(ph)
+            daily = _MarketDataService.compute_daily_returns(ph)
+            returns_frame[ticker] = pd.Series(
+                [r for _, r in daily], index=[d for d, _ in daily]
+            )
+            # Volume for return on date d[i] is price volume on d[i] (index i,
+            # corresponding to price index i in the original prices array).
+            volume_index = ph.dates[1:]  # drop the first price day
+            volumes_frame[ticker] = pd.Series(ph.volumes[1:], index=volume_index)
 
-        # returns have len(prices)-1 entries; volumes align with prices
-        # so volume index i corresponds to return index i-1
-        min_len = min(len(v) for v in ticker_returns.values())
-        dates = list(ticker_returns.values())[0][:min_len]
+        returns_df = pd.DataFrame(returns_frame).dropna()
+        volumes_df = pd.DataFrame(volumes_frame).reindex(returns_df.index).fillna(0)
 
-        portfolio_returns = np.zeros(min_len)
-        total_volumes = np.zeros(min_len, dtype=np.int64)
+        if returns_df.empty:
+            return PerformanceSeries(points=[])
 
-        for h in holdings:
-            if h.ticker in ticker_returns:
-                returns = np.array(
-                    [r for _, r in ticker_returns[h.ticker][:min_len]]
-                )
-                portfolio_returns += h.weight * returns
-                # volumes[1:] aligns with returns (skip first price day)
-                vols = ticker_prices[h.ticker].volumes[1 : min_len + 1]
-                total_volumes += np.array(vols, dtype=np.int64)
+        weights = {h.ticker: h.weight for h in holdings if h.ticker in returns_frame}
+        portfolio_returns = np.zeros(len(returns_df))
+        for ticker, w in weights.items():
+            portfolio_returns += w * returns_df[ticker].to_numpy()
+
+        total_volumes = volumes_df.sum(axis=1).to_numpy().astype(np.int64)
+        aligned_dates = list(returns_df.index)
 
         cumulative = np.cumprod(1 + portfolio_returns)
         return PerformanceSeries(
             points=[
                 PerformancePoint(
-                    date=dates[i][0].isoformat(),
+                    date=aligned_dates[i].isoformat(),
                     cumulative_return=float(cumulative[i]) - 1.0,
                     volume=int(total_volumes[i]),
                 )

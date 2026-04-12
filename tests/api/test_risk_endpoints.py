@@ -288,6 +288,86 @@ def test_performance_respects_lookback_param() -> None:
     assert response.json()["points"]  # non-empty
 
 
+def test_performance_aligns_mismatched_ticker_calendars() -> None:
+    """
+    AAPL has price data for days 0-9 (returns for days 1-9).
+    GOOGL has price data for days 5-14 (returns for days 6-14).
+    The intersection of return-dates is days 6-9 → 4 points.
+    The old code used min_len=4 but borrowed AAPL's dates (days 1-4),
+    producing wrong dates and misaligned returns.
+    """
+    app, engine, mock_market_repo = create_test_app()
+
+    base = date(2022, 1, 3)  # Monday
+    aapl_dates = [base + timedelta(days=i) for i in range(10)]   # days 0-9
+    googl_dates = [base + timedelta(days=i) for i in range(5, 15)]  # days 5-14
+
+    def make_prices(ticker: str, start: date, end: date) -> PriceHistory:
+        if ticker == "AAPL":
+            prices = [100.0 + i for i in range(10)]
+            return PriceHistory(
+                ticker="AAPL",
+                dates=aapl_dates,
+                close_prices=prices,
+                volumes=[500_000] * 10,
+            )
+        # GOOGL and any benchmark (SPY etc.)
+        prices = [200.0 + i for i in range(10)]
+        return PriceHistory(
+            ticker=ticker,
+            dates=googl_dates,
+            close_prices=prices,
+            volumes=[300_000] * 10,
+        )
+
+    mock_market_repo.get_price_history.side_effect = make_prices
+
+    market_data_service = MarketDataAppService(repo=mock_market_repo, engine=engine)
+    portfolio_repo = SQLitePortfolioRepository(engine)
+    portfolio_service = PortfolioAppService(
+        portfolio_repo=portfolio_repo,
+        market_data_repo=mock_market_repo,
+    )
+    risk_service = RiskAppService(
+        portfolio_service=portfolio_service,
+        market_data_service=market_data_service,
+    )
+    app.dependency_overrides[get_portfolio_service] = lambda: portfolio_service
+    app.dependency_overrides[get_risk_service] = lambda: risk_service
+    client = TestClient(app)
+
+    create_resp = client.post(
+        "/api/portfolios",
+        json={
+            "name": "Calendar",
+            "holdings": [
+                {"ticker": "AAPL", "weight": 0.5},
+                {"ticker": "GOOGL", "weight": 0.5},
+            ],
+        },
+    )
+    portfolio_id = create_resp.json()["id"]
+
+    response = client.get(f"/api/risk/{portfolio_id}/performance")
+    assert response.status_code == 200
+    points = response.json()["points"]
+
+    # AAPL returns: days 1-9 (9 dates). GOOGL returns: days 6-14 (9 dates).
+    # Intersection: days 6-9 → 4 points.
+    assert len(points) == 4, f"Expected 4 intersection points, got {len(points)}"
+
+    # All returned dates must fall within the intersection window.
+    intersection_start = (base + timedelta(days=6)).isoformat()
+    intersection_end = (base + timedelta(days=9)).isoformat()
+    for pt in points:
+        assert pt["date"] >= intersection_start, (
+            f"Date {pt['date']} before intersection"
+        )
+        assert pt["date"] <= intersection_end, (
+            f"Date {pt['date']} after intersection"
+        )
+
+
 def test_risk_with_lookback_param() -> None:
     client = _create_test_client()
 
