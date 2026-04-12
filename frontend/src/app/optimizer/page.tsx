@@ -59,7 +59,7 @@ export default function OptimizerPage() {
     setResult(null);
 
     try {
-      const r = await api.optimize({
+      const r = await api.optimize.run({
         tickers,
         objective,
         lookback_years: lookbackYears,

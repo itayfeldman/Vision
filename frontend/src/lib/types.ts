@@ -93,10 +93,16 @@ export interface PerformanceSeries {
   points: PerformancePoint[];
 }
 
+export interface WeightConstraint {
+  ticker: string;
+  min_weight: number;
+  max_weight: number;
+}
+
 export interface OptimizeRequest {
   tickers: string[];
   objective: string;
-  constraints?: { ticker: string; min_weight: number; max_weight: number }[];
+  constraints?: WeightConstraint[];
   lookback_years?: number;
 }
 
@@ -105,4 +111,42 @@ export interface OptimizeResult {
   expected_return: number;
   expected_volatility: number;
   sharpe_ratio: number;
+}
+
+export interface FrontierPoint {
+  expected_return: number;
+  expected_volatility: number;
+  sharpe_ratio: number;
+  weights: Record<string, number>;
+}
+
+export interface FrontierRequest {
+  tickers: string[];
+  constraints?: WeightConstraint[];
+  lookback_years?: number;
+  points?: number;
+}
+
+export interface FrontierResult {
+  points: FrontierPoint[];
+  min_volatility: FrontierPoint;
+  max_sharpe: FrontierPoint;
+  equal_weight: FrontierPoint;
+}
+
+export interface SpreadPoint {
+  date: string;
+  portfolio_cum: number;
+  benchmark_cum: number;
+  spread: number;
+}
+
+export interface BenchmarkComparison {
+  benchmark_ticker: string;
+  tracking_error: number;
+  beta: number;
+  alpha: number;
+  up_capture: number;
+  down_capture: number;
+  spread_series: SpreadPoint[];
 }

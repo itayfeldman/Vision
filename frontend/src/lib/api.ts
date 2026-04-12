@@ -1,13 +1,16 @@
 import type {
-  Portfolio,
-  ValuedPortfolio,
-  PortfolioSummary,
-  RiskReport,
+  BenchmarkComparison,
   FactorDecomposition,
-  PerformanceSeries,
+  FrontierRequest,
+  FrontierResult,
+  Holding,
   OptimizeRequest,
   OptimizeResult,
-  Holding,
+  PerformanceSeries,
+  Portfolio,
+  PortfolioSummary,
+  RiskReport,
+  ValuedPortfolio,
 } from "./types";
 
 const BASE = "/api";
@@ -53,6 +56,10 @@ export const api = {
       request<PerformanceSeries>(
         `/risk/${id}/performance?lookback_years=${lookbackYears}`
       ),
+    benchmark: (id: string, ticker = "SPY", lookbackYears = 3) =>
+      request<BenchmarkComparison>(
+        `/portfolios/${id}/benchmark?ticker=${encodeURIComponent(ticker)}&lookback_years=${lookbackYears}`
+      ),
   },
   factors: {
     get: (id: string, lookbackYears = 3) =>
@@ -60,9 +67,16 @@ export const api = {
         `/factors/${id}?lookback_years=${lookbackYears}`
       ),
   },
-  optimize: (req: OptimizeRequest) =>
-    request<OptimizeResult>("/optimize", {
-      method: "POST",
-      body: JSON.stringify(req),
-    }),
+  optimize: {
+    run: (req: OptimizeRequest) =>
+      request<OptimizeResult>("/optimize", {
+        method: "POST",
+        body: JSON.stringify(req),
+      }),
+    frontier: (req: FrontierRequest) =>
+      request<FrontierResult>("/optimize/frontier", {
+        method: "POST",
+        body: JSON.stringify(req),
+      }),
+  },
 };
