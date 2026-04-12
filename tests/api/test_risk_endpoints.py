@@ -177,6 +177,56 @@ def test_benchmark_comparison_default_ticker_is_spy() -> None:
     assert response.json()["benchmark_ticker"] == "SPY"
 
 
+def test_performance_returns_cumulative_return_series() -> None:
+    client = _create_test_client()
+
+    create_resp = client.post(
+        "/api/portfolios",
+        json={
+            "name": "Perf",
+            "holdings": [
+                {"ticker": "AAPL", "weight": 0.6},
+                {"ticker": "GOOGL", "weight": 0.4},
+            ],
+        },
+    )
+    portfolio_id = create_resp.json()["id"]
+
+    response = client.get(f"/api/risk/{portfolio_id}/performance")
+    assert response.status_code == 200
+    data = response.json()
+    assert "points" in data
+    assert len(data["points"]) > 0
+    first = data["points"][0]
+    assert "date" in first
+    assert "cumulative_return" in first
+    assert "volume" in first
+    assert isinstance(first["volume"], int)
+    # The deterministic price series in _create_test_client grows monotonically,
+    # so the last cumulative return must be strictly positive.
+    assert data["points"][-1]["cumulative_return"] > 0
+
+
+def test_performance_not_found() -> None:
+    client = _create_test_client()
+    response = client.get("/api/risk/nonexistent/performance")
+    assert response.status_code == 404
+
+
+def test_performance_respects_lookback_param() -> None:
+    client = _create_test_client()
+    create_resp = client.post(
+        "/api/portfolios",
+        json={"name": "Perf", "holdings": [{"ticker": "AAPL", "weight": 1.0}]},
+    )
+    portfolio_id = create_resp.json()["id"]
+    response = client.get(
+        f"/api/risk/{portfolio_id}/performance?lookback_years=1"
+    )
+    assert response.status_code == 200
+    assert response.json()["points"]  # non-empty
+
+
 def test_risk_with_lookback_param() -> None:
     client = _create_test_client()
 
