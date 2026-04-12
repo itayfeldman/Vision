@@ -368,6 +368,142 @@ def test_performance_aligns_mismatched_ticker_calendars() -> None:
         )
 
 
+def _make_benchmark_client_with_prices(
+    portfolio_dates: list[date],
+    portfolio_prices: list[float],
+    benchmark_dates: list[date],
+    benchmark_prices: list[float],
+) -> tuple[TestClient, str]:
+    """Helper that wires up a client where portfolio tickers and the benchmark
+    return specific price histories, then creates and returns a portfolio."""
+    app, engine, mock_market_repo = create_test_app()
+
+    n_port = len(portfolio_dates)
+    n_bench = len(benchmark_dates)
+
+    def make_prices(ticker: str, start: date, end: date) -> PriceHistory:
+        if ticker == "SPY":
+            return PriceHistory(
+                ticker="SPY",
+                dates=benchmark_dates,
+                close_prices=benchmark_prices,
+                volumes=[1_000_000] * n_bench,
+            )
+        return PriceHistory(
+            ticker=ticker,
+            dates=portfolio_dates,
+            close_prices=portfolio_prices,
+            volumes=[500_000] * n_port,
+        )
+
+    mock_market_repo.get_price_history.side_effect = make_prices
+
+    market_data_service = MarketDataAppService(repo=mock_market_repo, engine=engine)
+    portfolio_repo = SQLitePortfolioRepository(engine)
+    portfolio_service = PortfolioAppService(
+        portfolio_repo=portfolio_repo,
+        market_data_repo=mock_market_repo,
+    )
+    risk_service = RiskAppService(
+        portfolio_service=portfolio_service,
+        market_data_service=market_data_service,
+    )
+    app.dependency_overrides[get_portfolio_service] = lambda: portfolio_service
+    app.dependency_overrides[get_risk_service] = lambda: risk_service
+    client = TestClient(app)
+
+    create_resp = client.post(
+        "/api/portfolios",
+        json={"name": "Test", "holdings": [{"ticker": "AAPL", "weight": 1.0}]},
+    )
+    portfolio_id: str = create_resp.json()["id"]
+    return client, portfolio_id
+
+
+def test_benchmark_rejects_unresolvable_benchmark_ticker() -> None:
+    """When the benchmark ticker returns no price data the endpoint returns 422."""
+    app, engine, mock_market_repo = create_test_app()
+
+    n = 252
+    base = date(2023, 1, 2)
+    dates = [base + timedelta(days=i) for i in range(n)]
+    rng = np.random.default_rng(99)
+
+    def make_prices(ticker: str, start: date, end: date) -> PriceHistory:
+        if ticker == "UNKNOWN":
+            # Simulate benchmark ticker with no data.
+            return PriceHistory(ticker="UNKNOWN", dates=[], close_prices=[], volumes=[])
+        rets = rng.normal(0.0005, 0.01, n)
+        prices = list(100.0 * np.cumprod(1 + rets))
+        return PriceHistory(
+            ticker=ticker, dates=dates, close_prices=prices, volumes=[1_000_000] * n
+        )
+
+    mock_market_repo.get_price_history.side_effect = make_prices
+
+    market_data_service = MarketDataAppService(repo=mock_market_repo, engine=engine)
+    portfolio_repo = SQLitePortfolioRepository(engine)
+    portfolio_service = PortfolioAppService(
+        portfolio_repo=portfolio_repo, market_data_repo=mock_market_repo
+    )
+    risk_service = RiskAppService(
+        portfolio_service=portfolio_service, market_data_service=market_data_service
+    )
+    app.dependency_overrides[get_portfolio_service] = lambda: portfolio_service
+    app.dependency_overrides[get_risk_service] = lambda: risk_service
+    client = TestClient(app)
+
+    create_resp = client.post(
+        "/api/portfolios",
+        json={"name": "Test", "holdings": [{"ticker": "AAPL", "weight": 1.0}]},
+    )
+    portfolio_id = create_resp.json()["id"]
+
+    response = client.get(f"/api/portfolios/{portfolio_id}/benchmark?ticker=UNKNOWN")
+    assert response.status_code == 422
+    assert "UNKNOWN" in response.json()["detail"]
+
+
+def test_benchmark_rejects_insufficient_overlap() -> None:
+    """Fewer than 60 aligned days of overlap returns 422."""
+    base = date(2023, 1, 2)
+    # 61 prices → 60 return days (just at the limit) but we use 30 prices → 29 returns
+    overlap_days = 30
+    dates = [base + timedelta(days=i) for i in range(overlap_days + 1)]
+    prices = [100.0 + i * 0.1 for i in range(overlap_days + 1)]
+
+    client, portfolio_id = _make_benchmark_client_with_prices(
+        portfolio_dates=dates,
+        portfolio_prices=prices,
+        benchmark_dates=dates,
+        benchmark_prices=prices,
+    )
+
+    response = client.get(f"/api/portfolios/{portfolio_id}/benchmark?ticker=SPY")
+    assert response.status_code == 422
+    assert "60" in response.json()["detail"]
+
+
+def test_benchmark_rejects_no_overlap() -> None:
+    """Completely non-overlapping portfolio and benchmark date ranges return 422."""
+    base = date(2023, 1, 2)
+    # Portfolio: days 0-99; benchmark: days 200-299 — no common dates.
+    port_dates = [base + timedelta(days=i) for i in range(100)]
+    bench_dates = [base + timedelta(days=200 + i) for i in range(100)]
+    prices = [100.0 + i * 0.1 for i in range(100)]
+
+    client, portfolio_id = _make_benchmark_client_with_prices(
+        portfolio_dates=port_dates,
+        portfolio_prices=prices,
+        benchmark_dates=bench_dates,
+        benchmark_prices=prices,
+    )
+
+    response = client.get(f"/api/portfolios/{portfolio_id}/benchmark?ticker=SPY")
+    assert response.status_code == 422
+    assert "overlap" in response.json()["detail"].lower()
+
+
 def test_risk_with_lookback_param() -> None:
     client = _create_test_client()
 
