@@ -4,6 +4,8 @@ import pandas as pd
 
 from vision.application.market_data_service import MarketDataAppService
 from vision.domain.optimization.models import (
+    FrontierRequest,
+    FrontierResult,
     OptimizationRequest,
     OptimizationResult,
 )
@@ -45,4 +47,30 @@ class OptimizationAppService:
         returns_df = pd.DataFrame(aligned)
         return self._optimization_service.run_optimization(
             request, returns_df
+        )
+
+    def compute_frontier(self, request: FrontierRequest) -> FrontierResult:
+        if len(request.tickers) < 2:
+            raise ValueError("Need at least 2 tickers for frontier")
+
+        end = date.today()
+        start = end - timedelta(days=request.lookback_years * 365)
+
+        returns_data: dict[str, list[float]] = {}
+        for ticker in request.tickers:
+            daily = self._market_data_service.get_daily_returns(
+                ticker, start, end
+            )
+            if daily:
+                returns_data[ticker] = [r for _, r in daily]
+
+        if len(returns_data) < 2:
+            raise ValueError("Not enough data to compute frontier")
+
+        min_len = min(len(v) for v in returns_data.values())
+        aligned = {t: returns_data[t][:min_len] for t in returns_data}
+        returns_df = pd.DataFrame(aligned)
+
+        return self._optimization_service.compute_frontier(
+            returns_df, request.constraints, request.points
         )

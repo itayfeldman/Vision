@@ -30,3 +30,27 @@ class OptimizationResult:
     expected_return: float
     expected_volatility: float
     sharpe_ratio: float
+
+
+@dataclass(frozen=True)
+class FrontierPoint:
+    expected_return: float
+    expected_volatility: float
+    sharpe_ratio: float
+    weights: dict[str, float]
+
+
+@dataclass(frozen=True)
+class FrontierRequest:
+    tickers: list[str]
+    constraints: list[WeightConstraint]
+    lookback_years: int = 3
+    points: int = 50
+
+
+@dataclass(frozen=True)
+class FrontierResult:
+    points: list[FrontierPoint]
+    min_volatility: FrontierPoint
+    max_sharpe: FrontierPoint
+    equal_weight: FrontierPoint
