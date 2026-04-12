@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { PriceChart } from "@/components/charts/price-chart";
 import type { PriceHistory, ValuedHolding } from "@/lib/types";
@@ -13,17 +13,15 @@ interface Props {
   columns: number;
 }
 
-function isValued(
-  h: Props["holding"]
-): h is ValuedHolding {
+function isValued(h: Props["holding"]): h is ValuedHolding {
   return "current_price" in h;
 }
 
-function threeYearsAgoIso(): string {
+const THREE_YEARS_AGO = (() => {
   const d = new Date();
   d.setFullYear(d.getFullYear() - 3);
   return d.toISOString().slice(0, 10);
-}
+})();
 
 export function HoldingsRow({
   holding,
@@ -36,17 +34,42 @@ export function HoldingsRow({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Guards state updates after unmount and in-flight request cancellation.
+  const mountedRef = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
+
   function handleToggle() {
     const wasExpanded = expanded;
     onToggle();
     if (!wasExpanded && !prices && !loading) {
+      // Cancel any previous in-flight request for this row.
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       setLoading(true);
       setError(null);
       api.marketData
-        .prices(holding.ticker, threeYearsAgoIso())
-        .then(setPrices)
-        .catch((e: Error) => setError(e.message))
-        .finally(() => setLoading(false));
+        .prices(holding.ticker, THREE_YEARS_AGO, undefined, controller.signal)
+        .then((p) => {
+          if (mountedRef.current) setPrices(p);
+        })
+        .catch((e: Error) => {
+          if (mountedRef.current && !controller.signal.aborted) {
+            setError(e.message);
+          }
+        })
+        .finally(() => {
+          if (mountedRef.current) setLoading(false);
+        });
     }
   }
 

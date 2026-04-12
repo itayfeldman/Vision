@@ -69,13 +69,19 @@ export const api = {
       ),
   },
   marketData: {
-    prices: (ticker: string, start?: string, end?: string) => {
+    prices: (
+      ticker: string,
+      start?: string,
+      end?: string,
+      signal?: AbortSignal
+    ) => {
       const params = new URLSearchParams();
       if (start) params.set("start", start);
       if (end) params.set("end", end);
       const qs = params.toString();
       return request<PriceHistory>(
-        `/market-data/${encodeURIComponent(ticker)}/prices${qs ? `?${qs}` : ""}`
+        `/market-data/${encodeURIComponent(ticker)}/prices${qs ? `?${qs}` : ""}`,
+        { signal }
       );
     },
   },
