@@ -8,7 +8,13 @@ from vision.application.portfolio_service import (
     PortfolioAppService,
     PortfolioNotFoundError,
 )
-from vision.application.risk_service import BenchmarkUnresolvableError, RiskAppService
+from vision.application.risk_service import (
+    BenchmarkUnresolvableError,
+    InsufficientOverlapError,
+    MissingHoldingDataError,
+    NoOverlapError,
+    RiskAppService,
+)
 from vision.domain.portfolio.models import Holding, Portfolio
 from vision.domain.portfolio.services import InvalidTickerError, InvalidWeightsError
 
@@ -189,7 +195,11 @@ def get_benchmark_comparison(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except BenchmarkUnresolvableError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    except ValueError as e:
+    except MissingHoldingDataError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except NoOverlapError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except InsufficientOverlapError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
     return BenchmarkComparisonResponse(

@@ -23,6 +23,18 @@ class BenchmarkUnresolvableError(Exception):
     pass
 
 
+class MissingHoldingDataError(Exception):
+    pass
+
+
+class NoOverlapError(Exception):
+    pass
+
+
+class InsufficientOverlapError(Exception):
+    pass
+
+
 class RiskAppService:
     def __init__(
         self,
@@ -174,7 +186,7 @@ class RiskAppService:
                 missing.append(h.ticker)
 
         if missing:
-            raise ValueError(
+            raise MissingHoldingDataError(
                 "No market data available for holdings: "
                 + ", ".join(missing)
             )
@@ -198,7 +210,7 @@ class RiskAppService:
 
         df = pd.DataFrame(frame).dropna()
         if df.empty:
-            raise ValueError(
+            raise NoOverlapError(
                 "Portfolio and benchmark histories do not overlap"
             )
 
@@ -210,9 +222,15 @@ class RiskAppService:
             port_col += weights[t] * df[t].to_numpy()
 
         aligned_dates = [d for d in df.index]
-        return RiskCalculationService.compute_benchmark_comparison(
-            dates=aligned_dates,
-            portfolio_returns=port_col,
-            benchmark_returns=bench_col,
-            benchmark_ticker=benchmark_ticker,
-        )
+        try:
+            return RiskCalculationService.compute_benchmark_comparison(
+                dates=aligned_dates,
+                portfolio_returns=port_col,
+                benchmark_returns=bench_col,
+                benchmark_ticker=benchmark_ticker,
+            )
+        except ValueError as exc:
+            msg = str(exc)
+            if "aligned days" in msg:
+                raise InsufficientOverlapError(msg) from exc
+            raise
