@@ -22,6 +22,18 @@ class CorrelationMatrix:
 
 
 @dataclass(frozen=True)
+class PerformancePoint:
+    date: str  # ISO format
+    cumulative_return: float
+    volume: int
+
+
+@dataclass(frozen=True)
+class PerformanceSeries:
+    points: list[PerformancePoint]
+
+
+@dataclass(frozen=True)
 class SpreadPoint:
     date: str  # ISO format
     portfolio_cum: float

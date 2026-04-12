@@ -40,8 +40,40 @@ class RiskReportResponse(BaseModel):
     correlation: CorrelationMatrixResponse
 
 
+class PerformancePointResponse(BaseModel):
+    date: str
+    cumulative_return: float
+    volume: int
+
+
+class PerformanceResponse(BaseModel):
+    points: list[PerformancePointResponse]
+
+
 def get_risk_service() -> RiskAppService:
     raise NotImplementedError("Must be overridden via dependency_overrides")
+
+
+@router.get("/{portfolio_id}/performance", response_model=PerformanceResponse)
+def get_performance(
+    portfolio_id: str,
+    lookback_years: int = Query(default=3, ge=1, le=10),
+    service: RiskAppService = Depends(get_risk_service),  # noqa: B008
+) -> PerformanceResponse:
+    try:
+        series = service.get_portfolio_performance(portfolio_id, lookback_years)
+    except PortfolioNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return PerformanceResponse(
+        points=[
+            PerformancePointResponse(
+                date=p.date,
+                cumulative_return=p.cumulative_return,
+                volume=p.volume,
+            )
+            for p in series.points
+        ]
+    )
 
 
 @router.get("/{portfolio_id}", response_model=RiskReportResponse)

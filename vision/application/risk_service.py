@@ -10,6 +10,8 @@ from vision.domain.portfolio.models import Holding
 from vision.domain.risk.models import (
     BenchmarkComparison,
     CorrelationMatrix,
+    PerformancePoint,
+    PerformanceSeries,
     RiskMetrics,
 )
 from vision.domain.risk.services import RiskCalculationService
@@ -81,6 +83,67 @@ class RiskAppService:
         correlation = RiskCalculationService.compute_correlation_matrix(trimmed)
 
         return metrics, correlation
+
+    def get_portfolio_performance(
+        self, portfolio_id: str, lookback_years: int = 3
+    ) -> PerformanceSeries:
+        portfolio = self._portfolio_service.get_portfolio(portfolio_id)
+        return self._compute_performance(portfolio.holdings, lookback_years)
+
+    def _compute_performance(
+        self, holdings: list[Holding], lookback_years: int
+    ) -> PerformanceSeries:
+        end = date.today()
+        start = end - timedelta(days=lookback_years * 365)
+
+        from vision.domain.market_data.models import PriceHistory
+        from vision.domain.market_data.services import MarketDataService
+
+        ticker_prices: dict[str, PriceHistory] = {}
+        for h in holdings:
+            ph = self._market_data_service.get_price_history(
+                h.ticker, start, end
+            )
+            if ph and len(ph.dates) > 1:
+                ticker_prices[h.ticker] = ph
+
+        if not ticker_prices:
+            return PerformanceSeries(points=[])
+
+        # Compute daily returns from price histories
+        ticker_returns: dict[str, list[tuple[date, float]]] = {}
+        for ticker, ph in ticker_prices.items():
+            ticker_returns[ticker] = MarketDataService.compute_daily_returns(ph)
+
+        # returns have len(prices)-1 entries; volumes align with prices
+        # so volume index i corresponds to return index i-1
+        min_len = min(len(v) for v in ticker_returns.values())
+        dates = list(ticker_returns.values())[0][:min_len]
+
+        portfolio_returns = np.zeros(min_len)
+        total_volumes = np.zeros(min_len, dtype=np.int64)
+
+        for h in holdings:
+            if h.ticker in ticker_returns:
+                returns = np.array(
+                    [r for _, r in ticker_returns[h.ticker][:min_len]]
+                )
+                portfolio_returns += h.weight * returns
+                # volumes[1:] aligns with returns (skip first price day)
+                vols = ticker_prices[h.ticker].volumes[1 : min_len + 1]
+                total_volumes += np.array(vols, dtype=np.int64)
+
+        cumulative = np.cumprod(1 + portfolio_returns)
+        return PerformanceSeries(
+            points=[
+                PerformancePoint(
+                    date=dates[i][0].isoformat(),
+                    cumulative_return=float(cumulative[i]) - 1.0,
+                    volume=int(total_volumes[i]),
+                )
+                for i in range(len(cumulative))
+            ]
+        )
 
     def compare_to_benchmark(
         self,
