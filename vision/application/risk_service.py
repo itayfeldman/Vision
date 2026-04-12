@@ -156,6 +156,7 @@ class RiskAppService:
         start = end - timedelta(days=lookback_years * 365)
 
         frame: dict[str, pd.Series] = {}
+        missing: list[str] = []
         for h in portfolio.holdings:
             daily = self._market_data_service.get_daily_returns(
                 h.ticker, start, end
@@ -165,9 +166,14 @@ class RiskAppService:
                     [r for _, r in daily],
                     index=[d for d, _ in daily],
                 )
+            else:
+                missing.append(h.ticker)
 
-        if not frame:
-            raise ValueError("No market data available for portfolio holdings")
+        if missing:
+            raise ValueError(
+                "No market data available for holdings: "
+                + ", ".join(missing)
+            )
 
         try:
             bench_daily = self._market_data_service.get_daily_returns(
