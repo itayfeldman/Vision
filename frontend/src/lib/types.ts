@@ -141,6 +141,13 @@ export interface SpreadPoint {
   spread: number;
 }
 
+export interface PriceHistory {
+  ticker: string;
+  dates: string[];
+  close_prices: number[];
+  volumes: number[];
+}
+
 export interface BenchmarkComparison {
   benchmark_ticker: string;
   tracking_error: number;

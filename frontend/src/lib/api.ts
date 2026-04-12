@@ -9,6 +9,7 @@ import type {
   PerformanceSeries,
   Portfolio,
   PortfolioSummary,
+  PriceHistory,
   RiskReport,
   ValuedPortfolio,
 } from "./types";
@@ -66,6 +67,17 @@ export const api = {
       request<FactorDecomposition>(
         `/factors/${id}?lookback_years=${lookbackYears}`
       ),
+  },
+  marketData: {
+    prices: (ticker: string, start?: string, end?: string) => {
+      const params = new URLSearchParams();
+      if (start) params.set("start", start);
+      if (end) params.set("end", end);
+      const qs = params.toString();
+      return request<PriceHistory>(
+        `/market-data/${encodeURIComponent(ticker)}/prices${qs ? `?${qs}` : ""}`
+      );
+    },
   },
   optimize: {
     run: (req: OptimizeRequest) =>

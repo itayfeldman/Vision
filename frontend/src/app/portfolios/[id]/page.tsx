@@ -12,6 +12,7 @@ import { MetricCard } from "@/components/metric-card";
 import { AllocationPie } from "@/components/charts/allocation-pie";
 import { FactorBars } from "@/components/charts/factor-bars";
 import { PerformanceChart } from "@/components/charts/performance-chart";
+import { HoldingsRow } from "@/components/holdings-row";
 import type {
   PortfolioSummary, RiskReport, FactorDecomposition,
   ValuedPortfolio, PerformanceSeries,
@@ -28,6 +29,7 @@ export default function PortfolioDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -209,6 +211,7 @@ export default function PortfolioDetail() {
           <table className="w-full">
             <thead>
               <tr className="text-text-muted text-xs uppercase border-b border-border">
+                <th className="pb-2 w-6" />
                 <th className="text-left pb-2">Ticker</th>
                 <th className="text-right pb-2">Weight</th>
                 {valued && (
@@ -220,31 +223,20 @@ export default function PortfolioDetail() {
               </tr>
             </thead>
             <tbody>
-              {valued ? (
-                valued.holdings.map((h) => (
-                  <tr key={h.ticker} className="border-b border-border/50">
-                    <td className="py-2.5 font-mono font-medium">{h.ticker}</td>
-                    <td className="py-2.5 text-right font-mono text-text-secondary">
-                      {(h.weight * 100).toFixed(1)}%
-                    </td>
-                    <td className="py-2.5 text-right font-mono text-text-secondary">
-                      ${h.current_price.toFixed(2)}
-                    </td>
-                    <td className="py-2.5 text-right font-mono text-text-secondary">
-                      ${h.market_value.toFixed(2)}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                summary.holdings.map((h) => (
-                  <tr key={h.ticker} className="border-b border-border/50">
-                    <td className="py-2.5 font-mono font-medium">{h.ticker}</td>
-                    <td className="py-2.5 text-right font-mono text-text-secondary">
-                      {(h.weight * 100).toFixed(1)}%
-                    </td>
-                  </tr>
-                ))
-              )}
+              {(valued ? valued.holdings : summary.holdings).map((h) => (
+                <HoldingsRow
+                  key={h.ticker}
+                  holding={h}
+                  valued={Boolean(valued)}
+                  columns={valued ? 5 : 3}
+                  expanded={expandedTicker === h.ticker}
+                  onToggle={() =>
+                    setExpandedTicker(
+                      expandedTicker === h.ticker ? null : h.ticker
+                    )
+                  }
+                />
+              ))}
             </tbody>
           </table>
         </div>
