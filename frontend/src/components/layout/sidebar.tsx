@@ -4,6 +4,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: "grid" },
   { href: "/portfolios/new", label: "New Portfolio", icon: "plus" },
   { href: "/optimizer", label: "Optimizer", icon: "zap" },
+  { href: "/frontier", label: "Frontier", icon: "frontier" },
 ];
 
 function NavIcon({ icon }: { icon: string }) {
@@ -24,6 +25,12 @@ function NavIcon({ icon }: { icon: string }) {
       return (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
+        </svg>
+      );
+    case "frontier":
+      return (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 20.25h18M5.25 20.25V9.75m4.5 10.5V6.75m4.5 13.5V4.5m4.5 15.75V10.5" />
         </svg>
       );
     default:
