@@ -25,26 +25,20 @@ class OptimizationAppService:
         end = date.today()
         start = end - timedelta(days=request.lookback_years * 365)
 
-        returns_data: dict[str, list[float]] = {}
-        dates_data: dict[str, list[date]] = {}
+        series: dict[str, pd.Series] = {}
         for ticker in request.tickers:
             daily = self._market_data_service.get_daily_returns(
                 ticker, start, end
             )
             if daily:
-                dates_data[ticker] = [d for d, _ in daily]
-                returns_data[ticker] = [r for _, r in daily]
+                series[ticker] = pd.Series(
+                    [r for _, r in daily], index=[d for d, _ in daily]
+                )
 
-        if len(returns_data) < 2:
+        if len(series) < 2:
             raise ValueError("Not enough data to optimize")
 
-        # Align to shortest series
-        min_len = min(len(v) for v in returns_data.values())
-        aligned = {
-            t: returns_data[t][:min_len] for t in returns_data
-        }
-
-        returns_df = pd.DataFrame(aligned)
+        returns_df = pd.DataFrame(series).dropna()
         return self._optimization_service.run_optimization(
             request, returns_df
         )
@@ -56,21 +50,20 @@ class OptimizationAppService:
         end = date.today()
         start = end - timedelta(days=request.lookback_years * 365)
 
-        returns_data: dict[str, list[float]] = {}
+        series: dict[str, pd.Series] = {}
         for ticker in request.tickers:
             daily = self._market_data_service.get_daily_returns(
                 ticker, start, end
             )
             if daily:
-                returns_data[ticker] = [r for _, r in daily]
+                series[ticker] = pd.Series(
+                    [r for _, r in daily], index=[d for d, _ in daily]
+                )
 
-        if len(returns_data) < 2:
+        if len(series) < 2:
             raise ValueError("Not enough data to compute frontier")
 
-        min_len = min(len(v) for v in returns_data.values())
-        aligned = {t: returns_data[t][:min_len] for t in returns_data}
-        returns_df = pd.DataFrame(aligned)
-
+        returns_df = pd.DataFrame(series).dropna()
         return self._optimization_service.compute_frontier(
             returns_df, request.constraints, request.points
         )
