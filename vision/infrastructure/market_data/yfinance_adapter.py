@@ -2,20 +2,17 @@ from datetime import date
 
 import yfinance as yf
 
+from vision.domain.core.currency import Currency
 from vision.domain.market_data.models import AssetInfo, PriceHistory
 from vision.domain.market_data.repository import MarketDataRepository
 
 
 class YFinanceMarketDataRepository(MarketDataRepository):
-    def get_price_history(
-        self, ticker: str, start: date, end: date
-    ) -> PriceHistory:
+    def get_price_history(self, ticker: str, start: date, end: date) -> PriceHistory:
         stock = yf.Ticker(ticker)
         df = stock.history(start=start.isoformat(), end=end.isoformat())
         if df.empty:
-            return PriceHistory(
-                ticker=ticker, dates=[], close_prices=[], volumes=[]
-            )
+            return PriceHistory(ticker=ticker, dates=[], close_prices=[], volumes=[])
         dates = [d.date() for d in df.index]
         close_prices = df["Close"].tolist()
         volumes = df["Volume"].astype(int).tolist()
@@ -33,7 +30,7 @@ class YFinanceMarketDataRepository(MarketDataRepository):
             ticker=ticker,
             name=info.get("longName", ticker),
             sector=info.get("sector", "Unknown"),
-            currency=info.get("currency", "USD"),
+            currency=info.get("currency", Currency.USD.value),
         )
 
     def validate_ticker(self, ticker: str) -> bool:
